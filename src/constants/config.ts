@@ -20,4 +20,4 @@ export const AUDIO_RECORDING_OPTIONS = {
   mimeType: 'audio/mp4',
 } as const;
 
-export const DEFAULT_API_BASE_URL = 'http://localhost:8000';
+export const DEFAULT_API_BASE_URL = 'http://10.54.132.214:8000';
