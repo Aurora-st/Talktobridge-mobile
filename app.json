@@ -1,25 +1,49 @@
 {
   "expo": {
-    "name": "TalkBridge-Mobile",
-    "slug": "TalkBridge-Mobile",
+    "name": "TalkBridge AI",
+    "slug": "talkbridge-ai",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
+    "scheme": "talkbridge",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F172A"
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.talkbridge.ai",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "TalkBridge AI needs microphone access to record your voice for translation.",
+        "UIBackgroundModes": ["audio"]
+      }
     },
     "android": {
+      "package": "com.talkbridge.ai",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0F172A",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "predictiveBackGestureEnabled": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-av",
+        {
+          "microphonePermission": "TalkBridge AI needs microphone access to record your voice for translation."
+        }
+      ]
+    ]
   }
 }
