@@ -1,82 +1,47 @@
-import {
-  cacheDirectory,
-  EncodingType,
-  readAsStringAsync,
-  writeAsStringAsync,
-} from 'expo-file-system/legacy';
-import type {
-  SynthesisRequest,
-  SynthesisResponse,
-  TranscriptionRequest,
-  TranscriptionResponse,
-  TranslationRequest,
-  TranslationResponse,
-} from '../../types/api';
-import { getHttpClient, parseApiError } from './httpClient';
+import { AUDIO_RECORDING_OPTIONS, TRANSLATE_SPEECH_TIMEOUT_MS } from '../../constants/config';
+import type { TranslateSpeechRequest, TranslationResponse } from '../../types/api';
+import { postMultipart, resolveBackendUrl } from './httpClient';
 
-async function readAudioAsBase64(uri: string): Promise<string> {
-  return readAsStringAsync(uri, {
-    encoding: EncodingType.Base64,
-  });
-}
+const TRANSLATE_SPEECH_PATH = '/translate-speech';
 
-async function writeBase64Audio(base64: string, extension: string): Promise<string> {
-  if (!cacheDirectory) {
-    throw new Error('Cache directory is unavailable on this device.');
+function buildTranslateSpeechFormData(request: TranslateSpeechRequest): FormData {
+  const formData = new FormData();
+  formData.append('target_lang', request.target_lang);
+
+  if (request.source_lang) {
+    formData.append('source_lang', request.source_lang);
   }
-  const fileUri = `${cacheDirectory}tts-${Date.now()}${extension}`;
-  await writeAsStringAsync(fileUri, base64, {
-    encoding: EncodingType.Base64,
-  });
-  return fileUri;
+
+  const fieldName = request.fieldName ?? 'file';
+  const fileName = `recording-${Date.now()}${AUDIO_RECORDING_OPTIONS.extension}`;
+
+  formData.append(fieldName, {
+    uri: request.audioUri,
+    name: fileName,
+    type: AUDIO_RECORDING_OPTIONS.mimeType,
+  } as unknown as Blob);
+
+  return formData;
 }
 
-export async function transcribeAudio(
-  request: TranscriptionRequest,
-): Promise<TranscriptionResponse> {
-  try {
-    const audioBase64 = await readAudioAsBase64(request.audioUri);
-    const client = getHttpClient();
-    const { data } = await client.post<TranscriptionResponse>('/v1/transcribe', {
-      audio: audioBase64,
-      language: request.language,
-      format: 'm4a',
-    });
-    return data;
-  } catch (error) {
-    throw parseApiError(error);
-  }
-}
-
-export async function translateText(
-  request: TranslationRequest,
+/**
+ * POST /translate-speech
+ * Content-Type: multipart/form-data
+ * Fields: target_lang (required), source_lang (optional), file | audio
+ */
+export async function translateSpeech(
+  request: TranslateSpeechRequest,
 ): Promise<TranslationResponse> {
-  try {
-    const client = getHttpClient();
-    const { data } = await client.post<TranslationResponse>('/v1/translate', {
-      text: request.text,
-      source_language: request.sourceLanguage,
-      target_language: request.targetLanguage,
-    });
-    return data;
-  } catch (error) {
-    throw parseApiError(error);
-  }
-}
+  const formData = buildTranslateSpeechFormData(request);
 
-export async function synthesizeSpeech(
-  request: SynthesisRequest,
-): Promise<SynthesisResponse> {
-  try {
-    const client = getHttpClient();
-    const { data } = await client.post<{ audio: string; format: string }>('/v1/synthesize', {
-      text: request.text,
-      language: request.language,
-    });
-    const extension = data.format?.startsWith('.') ? data.format : `.${data.format ?? 'm4a'}`;
-    const audioUri = await writeBase64Audio(data.audio, extension);
-    return { audioUri };
-  } catch (error) {
-    throw parseApiError(error);
-  }
+  const response = await postMultipart<TranslationResponse>(
+    TRANSLATE_SPEECH_PATH,
+    formData,
+    { timeout: TRANSLATE_SPEECH_TIMEOUT_MS },
+  );
+
+  return {
+    ...response,
+    audio_url: resolveBackendUrl(response.audio_url),
+  };
 }

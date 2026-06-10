@@ -1,12 +1,19 @@
 import React, { useState } from 'react';
 import {
   Alert,
+  Platform,
   StyleSheet,
   TextInput,
   View,
 } from 'react-native';
+import { DEFAULT_API_BASE_URL } from '../constants/config';
 import { BORDER_RADIUS, SPACING } from '../constants/layout';
-import { SUPPORTED_LANGUAGES } from '../constants/languages';
+import {
+  getValidTargetLanguages,
+  isSupportedLanguage,
+  SUPPORTED_LANGUAGES,
+  type LanguageCode,
+} from '../constants/languages';
 import type { ThemeMode } from '../types/settings';
 import { Divider } from '../components/common/Divider';
 import { GlassCard } from '../components/common/GlassCard';
@@ -14,6 +21,8 @@ import { PrimaryButton } from '../components/common/PrimaryButton';
 import { ScreenContainer } from '../components/common/ScreenContainer';
 import { SettingRow } from '../components/common/SettingRow';
 import { Typography } from '../components/common/Typography';
+import { fetchHealth } from '../services/api/talkBridgeApi';
+import { ApiRequestError } from '../services/api/httpClient';
 import { useSettings } from '../hooks/useSettings';
 import { useTheme } from '../hooks/useTheme';
 
@@ -28,11 +37,34 @@ export function SettingsScreen() {
   const { settings, updateSettings, resetSettings } = useSettings();
 
   const [apiBaseUrl, setApiBaseUrl] = useState(settings.apiBaseUrl);
-  const [apiKey, setApiKey] = useState(settings.apiKey);
+  const [isTesting, setIsTesting] = useState(false);
 
   const handleSaveApi = async () => {
-    await updateSettings({ apiBaseUrl: apiBaseUrl.trim(), apiKey: apiKey.trim() });
-    Alert.alert('Saved', 'API configuration updated successfully.');
+    const trimmedUrl = apiBaseUrl.trim();
+    await updateSettings({ apiBaseUrl: trimmedUrl });
+    Alert.alert('Saved', 'Backend URL updated successfully.');
+  };
+
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    try {
+      await updateSettings({ apiBaseUrl: apiBaseUrl.trim() });
+      const health = await fetchHealth();
+      Alert.alert(
+        'Connection Successful',
+        `Status: ${health.status}\nWhisper: ${health.whisper_model}\nDatabase: ${health.database ?? 'connected'}`,
+      );
+    } catch (error) {
+      const message =
+        error instanceof ApiRequestError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : 'Connection failed.';
+      Alert.alert('Connection Failed', message);
+    } finally {
+      setIsTesting(false);
+    }
   };
 
   const handleReset = () => {
@@ -46,8 +78,7 @@ export function SettingsScreen() {
           style: 'destructive',
           onPress: () => {
             void resetSettings().then(() => {
-              setApiBaseUrl('');
-              setApiKey('');
+              setApiBaseUrl(DEFAULT_API_BASE_URL);
               setThemeMode('system');
             });
           },
@@ -56,12 +87,37 @@ export function SettingsScreen() {
     );
   };
 
+  const handleSourceChange = (code: string) => {
+    if (!isSupportedLanguage(code)) {
+      return;
+    }
+    const validTargets = getValidTargetLanguages(code);
+    const nextTarget = validTargets.includes(settings.targetLanguage as LanguageCode)
+      ? settings.targetLanguage
+      : validTargets[0];
+    void updateSettings({
+      sourceLanguage: code,
+      targetLanguage: nextTarget ?? settings.targetLanguage,
+    });
+  };
+
+  const handleTargetChange = (code: string) => {
+    if (!isSupportedLanguage(code)) {
+      return;
+    }
+    void updateSettings({ targetLanguage: code });
+  };
+
+  const targetOptions = isSupportedLanguage(settings.sourceLanguage)
+    ? getValidTargetLanguages(settings.sourceLanguage)
+    : SUPPORTED_LANGUAGES.map((item) => item.code);
+
   return (
     <ScreenContainer>
       <View style={styles.header}>
         <Typography variant="title">Settings</Typography>
         <Typography variant="body" color="secondary">
-          Customize your TalkBridge experience
+          Configure your TalkBridge backend connection
         </Typography>
       </View>
 
@@ -87,15 +143,16 @@ export function SettingsScreen() {
 
       <GlassCard style={styles.section}>
         <Typography variant="label" color="muted">
-          API Configuration
+          Backend Configuration
         </Typography>
         <Typography variant="caption" color="secondary">
-          Enter your TalkBridge backend URL and API key for live translation.
+          FastAPI backend URL. Use {DEFAULT_API_BASE_URL} for{' '}
+          {Platform.OS === 'android' ? 'Android emulator' : 'local development'}.
         </Typography>
         <TextInput
           value={apiBaseUrl}
           onChangeText={setApiBaseUrl}
-          placeholder="https://api.your-backend.com"
+          placeholder={DEFAULT_API_BASE_URL}
           placeholderTextColor={theme.colors.textMuted}
           autoCapitalize="none"
           autoCorrect={false}
@@ -109,24 +166,13 @@ export function SettingsScreen() {
             },
           ]}
         />
-        <TextInput
-          value={apiKey}
-          onChangeText={setApiKey}
-          placeholder="API Key"
-          placeholderTextColor={theme.colors.textMuted}
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
-          style={[
-            styles.input,
-            {
-              color: theme.colors.textPrimary,
-              backgroundColor: theme.colors.inputBackground,
-              borderColor: theme.colors.glassBorder,
-            },
-          ]}
+        <PrimaryButton label="Save Backend URL" onPress={handleSaveApi} />
+        <PrimaryButton
+          label="Test Connection"
+          variant="ghost"
+          loading={isTesting}
+          onPress={handleTestConnection}
         />
-        <PrimaryButton label="Save API Settings" onPress={handleSaveApi} />
       </GlassCard>
 
       <GlassCard style={styles.section}>
@@ -135,21 +181,17 @@ export function SettingsScreen() {
         </Typography>
         <SettingRow
           title="Source Language"
-          description={SUPPORTED_LANGUAGES.find((l) => l.code === settings.sourceLanguage)?.label}
-          trailing={
-            <Typography variant="caption" color="accent">
-              {settings.sourceLanguage.toUpperCase()}
-            </Typography>
+          description={
+            SUPPORTED_LANGUAGES.find((item) => item.code === settings.sourceLanguage)?.label
           }
         />
-        <Divider />
         <View style={styles.languagePicker}>
-          {SUPPORTED_LANGUAGES.slice(0, 6).map((language) => (
+          {SUPPORTED_LANGUAGES.map((language) => (
             <PrimaryButton
               key={`source-${language.code}`}
               label={language.code.toUpperCase()}
               variant={settings.sourceLanguage === language.code ? 'primary' : 'ghost'}
-              onPress={() => void updateSettings({ sourceLanguage: language.code })}
+              onPress={() => handleSourceChange(language.code)}
               style={styles.langChip}
             />
           ))}
@@ -157,20 +199,19 @@ export function SettingsScreen() {
         <Divider />
         <SettingRow
           title="Target Language"
-          description={SUPPORTED_LANGUAGES.find((l) => l.code === settings.targetLanguage)?.label}
-          trailing={
-            <Typography variant="caption" color="accent">
-              {settings.targetLanguage.toUpperCase()}
-            </Typography>
+          description={
+            SUPPORTED_LANGUAGES.find((item) => item.code === settings.targetLanguage)?.label
           }
         />
         <View style={styles.languagePicker}>
-          {SUPPORTED_LANGUAGES.slice(0, 6).map((language) => (
+          {SUPPORTED_LANGUAGES.filter((language) =>
+            targetOptions.includes(language.code),
+          ).map((language) => (
             <PrimaryButton
               key={`target-${language.code}`}
               label={language.code.toUpperCase()}
               variant={settings.targetLanguage === language.code ? 'primary' : 'ghost'}
-              onPress={() => void updateSettings({ targetLanguage: language.code })}
+              onPress={() => handleTargetChange(language.code)}
               style={styles.langChip}
             />
           ))}
@@ -190,7 +231,7 @@ export function SettingsScreen() {
         <Divider />
         <SettingRow
           title="Auto-play Responses"
-          description="Automatically play translated speech"
+          description="Automatically play translated speech from audio_url"
           value={settings.autoPlayResponses}
           onValueChange={(value) => void updateSettings({ autoPlayResponses: value })}
         />

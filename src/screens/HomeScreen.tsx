@@ -11,10 +11,9 @@ import { GlassCard } from '../components/common/GlassCard';
 import { PrimaryButton } from '../components/common/PrimaryButton';
 import { ScreenContainer } from '../components/common/ScreenContainer';
 import { Typography } from '../components/common/Typography';
-import { useConversations } from '../hooks/useConversations';
+import { useBackendStatus } from '../hooks/useBackendStatus';
 import { useSettings } from '../hooks/useSettings';
 import { useTheme } from '../hooks/useTheme';
-import { isApiConfigured } from '../services/api/httpClient';
 
 type HomeNavigation = NativeStackNavigationProp<RootStackParamList>;
 
@@ -22,10 +21,7 @@ export function HomeScreen() {
   const navigation = useNavigation<HomeNavigation>();
   const { theme } = useTheme();
   const { settings } = useSettings();
-  const { conversations, isLoading } = useConversations();
-
-  const recentCount = conversations.length;
-  const apiReady = isApiConfigured();
+  const { health, stats, isLoading, error, isOnline, refresh } = useBackendStatus();
 
   const handleStartConversation = () => {
     navigation.navigate('Conversation', {});
@@ -43,7 +39,7 @@ export function HomeScreen() {
         <View
           style={[
             styles.statusDot,
-            { backgroundColor: apiReady ? theme.colors.success : theme.colors.warning },
+            { backgroundColor: isOnline ? theme.colors.success : theme.colors.danger },
           ]}
         />
       </View>
@@ -55,7 +51,8 @@ export function HomeScreen() {
         <Typography variant="subtitle">Real-time voice translation</Typography>
         <Typography variant="body" color="secondary" style={styles.heroText}>
           Speak naturally and bridge language barriers with AI-powered
-          transcription, translation, and speech synthesis.
+          transcription, translation, and speech synthesis via your FastAPI
+          backend.
         </Typography>
         <View style={styles.languageRow}>
           <Typography variant="caption" color="muted">
@@ -76,33 +73,44 @@ export function HomeScreen() {
       <View style={styles.statsRow}>
         <GlassCard style={styles.statCard}>
           <Typography variant="title" color="accent">
-            {isLoading ? '—' : recentCount}
+            {isLoading ? '—' : (stats?.total_translations ?? 0)}
           </Typography>
           <Typography variant="caption" color="muted">
-            Saved Conversations
+            Total Translations
           </Typography>
         </GlassCard>
         <GlassCard style={styles.statCard}>
           <Typography variant="title" color="accent">
-            {apiReady ? 'ON' : 'OFF'}
+            {isLoading ? '—' : `${Math.round(stats?.success_rate_percent ?? 0)}%`}
           </Typography>
           <Typography variant="caption" color="muted">
-            API Connection
+            Success Rate
           </Typography>
         </GlassCard>
       </View>
 
-      {!apiReady ? (
-        <GlassCard style={styles.notice}>
-          <Typography variant="body" weight="600">
-            Configure your API
-          </Typography>
+      <GlassCard style={styles.notice}>
+        <Typography variant="body" weight="600">
+          Backend {isOnline ? 'Connected' : 'Offline'}
+        </Typography>
+        {isOnline && health ? (
           <Typography variant="caption" color="secondary">
-            Add your TalkBridge API base URL in Settings to enable live
-            transcription and translation.
+            Whisper model: {health.whisper_model} · Cache entries:{' '}
+            {health.cache_entries} · Database: {health.database ?? 'connected'}
           </Typography>
-        </GlassCard>
-      ) : null}
+        ) : (
+          <Typography variant="caption" color="secondary">
+            {error ??
+              'Unable to reach the backend. Verify it is running at the configured URL.'}
+          </Typography>
+        )}
+        <PrimaryButton
+          label="Refresh Status"
+          variant="ghost"
+          onPress={() => void refresh()}
+          style={styles.refreshButton}
+        />
+      </GlassCard>
     </ScreenContainer>
   );
 }
@@ -151,5 +159,8 @@ const styles = StyleSheet.create({
   },
   notice: {
     gap: SPACING.xs,
+  },
+  refreshButton: {
+    marginTop: SPACING.sm,
   },
 });

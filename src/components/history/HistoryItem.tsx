@@ -1,70 +1,62 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { StyleSheet, View } from 'react-native';
 import { formatDistanceToNow } from '../../utils/date';
 import { getLanguageLabel } from '../../constants/languages';
 import { SPACING } from '../../constants/layout';
-import type { Conversation } from '../../types/conversation';
-import { useTheme } from '../../hooks/useTheme';
+import type { AnalyticsHistoryRecord } from '../../types/api';
 import { Typography } from '../common/Typography';
 
 interface HistoryItemProps {
-  conversation: Conversation;
-  onPress: () => void;
-  onDelete: () => void;
+  record: AnalyticsHistoryRecord;
 }
 
-export function HistoryItem({ conversation, onPress, onDelete }: HistoryItemProps) {
-  const { theme } = useTheme();
-  const lastMessage = conversation.messages[conversation.messages.length - 1];
-  const preview = lastMessage?.text ?? 'No messages yet';
+export function HistoryItem({ record }: HistoryItemProps) {
+  const sourceLabel = record.source_lang
+    ? getLanguageLabel(record.source_lang)
+    : record.detected_language
+      ? `${getLanguageLabel(record.detected_language)} (detected)`
+      : 'Auto';
 
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.container,
-        {
-          backgroundColor: pressed
-            ? theme.colors.inputBackground
-            : 'transparent',
-        },
-      ]}
-    >
+    <View style={styles.container}>
       <View style={styles.content}>
         <Typography variant="body" weight="600" numberOfLines={1}>
-          {conversation.title}
-        </Typography>
-        <Typography variant="caption" color="muted" numberOfLines={1}>
-          {getLanguageLabel(conversation.sourceLanguage)} →{' '}
-          {getLanguageLabel(conversation.targetLanguage)}
-        </Typography>
-        <Typography variant="caption" color="secondary" numberOfLines={2}>
-          {preview}
+          {record.source_text || 'Voice translation'}
         </Typography>
         <Typography variant="caption" color="muted">
-          {formatDistanceToNow(conversation.updatedAt)}
+          {sourceLabel} → {getLanguageLabel(record.target_lang)}
         </Typography>
+        <Typography variant="caption" color="secondary" numberOfLines={2}>
+          {record.translated_text}
+        </Typography>
+        <View style={styles.metaRow}>
+          <Typography variant="caption" color="muted">
+            {formatDistanceToNow(record.created_at)}
+          </Typography>
+          <Typography variant="caption" color="muted">
+            {Math.round(record.latency.total)}ms
+          </Typography>
+          {record.cached ? (
+            <Typography variant="caption" color="accent">
+              Cached
+            </Typography>
+          ) : null}
+        </View>
       </View>
-      <Pressable onPress={onDelete} hitSlop={12} style={styles.delete}>
-        <Ionicons name="trash-outline" size={20} color={theme.colors.danger} />
-      </Pressable>
-    </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingVertical: SPACING.md,
-    gap: SPACING.md,
   },
   content: {
-    flex: 1,
     gap: SPACING.xs,
   },
-  delete: {
-    padding: SPACING.sm,
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
   },
 });

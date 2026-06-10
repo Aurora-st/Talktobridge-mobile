@@ -1,22 +1,27 @@
+export type LanguageCode = 'en' | 'hi' | 'ja' | 'es' | 'ta';
+
 export interface LanguageOption {
-  code: string;
+  code: LanguageCode;
   label: string;
   nativeLabel: string;
 }
 
 export const SUPPORTED_LANGUAGES: LanguageOption[] = [
   { code: 'en', label: 'English', nativeLabel: 'English' },
-  { code: 'es', label: 'Spanish', nativeLabel: 'Español' },
-  { code: 'fr', label: 'French', nativeLabel: 'Français' },
-  { code: 'de', label: 'German', nativeLabel: 'Deutsch' },
-  { code: 'it', label: 'Italian', nativeLabel: 'Italiano' },
-  { code: 'pt', label: 'Portuguese', nativeLabel: 'Português' },
   { code: 'hi', label: 'Hindi', nativeLabel: 'हिन्दी' },
   { code: 'ja', label: 'Japanese', nativeLabel: '日本語' },
-  { code: 'ko', label: 'Korean', nativeLabel: '한국어' },
-  { code: 'zh', label: 'Chinese', nativeLabel: '中文' },
-  { code: 'ar', label: 'Arabic', nativeLabel: 'العربية' },
-  { code: 'ru', label: 'Russian', nativeLabel: 'Русский' },
+  { code: 'es', label: 'Spanish', nativeLabel: 'Español' },
+  { code: 'ta', label: 'Tamil', nativeLabel: 'தமிழ்' },
+];
+
+export const SUPPORTED_PAIRS: ReadonlyArray<readonly [LanguageCode, LanguageCode]> = [
+  ['ja', 'en'],
+  ['en', 'hi'],
+  ['hi', 'en'],
+  ['en', 'es'],
+  ['es', 'en'],
+  ['ta', 'hi'],
+  ['hi', 'ta'],
 ];
 
 export function getLanguageLabel(code: string): string {
@@ -27,4 +32,29 @@ export function getLanguageLabel(code: string): string {
 export function getLanguageNativeLabel(code: string): string {
   const language = SUPPORTED_LANGUAGES.find((item) => item.code === code);
   return language?.nativeLabel ?? code.toUpperCase();
+}
+
+export function isSupportedLanguage(code: string): code is LanguageCode {
+  return SUPPORTED_LANGUAGES.some((item) => item.code === code);
+}
+
+export function isSupportedPair(sourceLang: string, targetLang: string): boolean {
+  if (sourceLang === targetLang) {
+    return false;
+  }
+  return SUPPORTED_PAIRS.some(
+    ([source, target]) => source === sourceLang && target === targetLang,
+  );
+}
+
+export function getValidTargetLanguages(sourceLang: LanguageCode): LanguageCode[] {
+  return SUPPORTED_PAIRS.filter(([source]) => source === sourceLang).map(
+    ([, target]) => target,
+  );
+}
+
+export function getValidSourceLanguages(targetLang: LanguageCode): LanguageCode[] {
+  return SUPPORTED_PAIRS.filter(([, target]) => target === targetLang).map(
+    ([source]) => source,
+  );
 }

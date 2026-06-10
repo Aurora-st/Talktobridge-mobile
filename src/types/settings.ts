@@ -1,3 +1,5 @@
+import { DEFAULT_API_BASE_URL } from '../constants/config';
+
 export type ThemeMode = 'light' | 'dark' | 'system';
 
 export interface AppSettings {
@@ -14,7 +16,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   themeMode: 'system',
   sourceLanguage: 'en',
   targetLanguage: 'es',
-  apiBaseUrl: '',
+  apiBaseUrl: DEFAULT_API_BASE_URL,
   apiKey: '',
   hapticFeedback: true,
   autoPlayResponses: true,

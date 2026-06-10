@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -12,6 +12,14 @@ import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SPACING } from '../constants/layout';
+import {
+  getValidSourceLanguages,
+  getValidTargetLanguages,
+  isSupportedLanguage,
+  isSupportedPair,
+  SUPPORTED_LANGUAGES,
+  type LanguageCode,
+} from '../constants/languages';
 import type { Conversation, ConversationMessage } from '../types/conversation';
 import type { RootStackParamList } from '../types/navigation';
 import { GlassCard } from '../components/common/GlassCard';
@@ -24,14 +32,11 @@ import { MessageBubble } from '../components/conversation/MessageBubble';
 import { RecordButton } from '../components/conversation/RecordButton';
 import { useAudioRecording } from '../hooks/useAudioRecording';
 import { useConversations } from '../hooks/useConversations';
+import { usePipelineStage } from '../hooks/usePipelineStage';
 import { useSettings } from '../hooks/useSettings';
 import { useTheme } from '../hooks/useTheme';
-import { isApiConfigured } from '../services/api/httpClient';
-import {
-  synthesizeSpeech,
-  transcribeAudio,
-  translateText,
-} from '../services/api/translationService';
+import { ApiRequestError, isApiConfigured } from '../services/api/httpClient';
+import { translateSpeech } from '../services/api/translationService';
 import { playAudio } from '../services/audio/audioRecordingService';
 
 type ConversationRoute = RouteProp<RootStackParamList, 'Conversation'>;
@@ -51,11 +56,22 @@ export function ConversationScreen() {
     setActiveConversation,
   } = useConversations();
 
-  const [sourceLanguage, setSourceLanguage] = useState(settings.sourceLanguage);
-  const [targetLanguage, setTargetLanguage] = useState(settings.targetLanguage);
-  const [isProcessingPipeline, setIsProcessingPipeline] = useState(false);
-  const [pipelineMessage, setPipelineMessage] = useState('');
+  const [sourceLanguage, setSourceLanguage] = useState<LanguageCode>(
+    isSupportedLanguage(settings.sourceLanguage) ? settings.sourceLanguage : 'en',
+  );
+  const [targetLanguage, setTargetLanguage] = useState<LanguageCode>(
+    isSupportedLanguage(settings.targetLanguage) ? settings.targetLanguage : 'es',
+  );
+
   const conversationRef = useRef<Conversation | null>(null);
+  const {
+    stage,
+    message: pipelineMessage,
+    setPipelineStage,
+    startProcessingStages,
+    resetStage,
+    isBusy,
+  } = usePipelineStage();
 
   const {
     isRecording,
@@ -69,6 +85,22 @@ export function ConversationScreen() {
   const messages = activeConversation?.messages ?? [];
   const listRef = useRef<FlatList<ConversationMessage>>(null);
 
+  const sourceOptions = useMemo(
+    () =>
+      SUPPORTED_LANGUAGES.filter((language) =>
+        getValidSourceLanguages(targetLanguage).includes(language.code),
+      ),
+    [targetLanguage],
+  );
+
+  const targetOptions = useMemo(
+    () =>
+      SUPPORTED_LANGUAGES.filter((language) =>
+        getValidTargetLanguages(sourceLanguage).includes(language.code),
+      ),
+    [sourceLanguage],
+  );
+
   useEffect(() => {
     let mounted = true;
 
@@ -77,18 +109,31 @@ export function ConversationScreen() {
         const existing = await loadConversation(route.params.conversationId);
         if (mounted && existing) {
           conversationRef.current = existing;
-          setSourceLanguage(existing.sourceLanguage);
-          setTargetLanguage(existing.targetLanguage);
+          if (isSupportedLanguage(existing.sourceLanguage)) {
+            setSourceLanguage(existing.sourceLanguage);
+          }
+          if (isSupportedLanguage(existing.targetLanguage)) {
+            setTargetLanguage(existing.targetLanguage);
+          }
         }
         return;
       }
 
+      const initialSource = isSupportedLanguage(settings.sourceLanguage)
+        ? settings.sourceLanguage
+        : 'en';
+      const initialTarget = isSupportedLanguage(settings.targetLanguage)
+        ? settings.targetLanguage
+        : 'es';
+
       const created = await createConversation({
-        sourceLanguage: settings.sourceLanguage,
-        targetLanguage: settings.targetLanguage,
+        sourceLanguage: initialSource,
+        targetLanguage: initialTarget,
       });
       if (mounted) {
         conversationRef.current = created;
+        setSourceLanguage(initialSource);
+        setTargetLanguage(initialTarget);
       }
     }
 
@@ -97,14 +142,16 @@ export function ConversationScreen() {
     return () => {
       mounted = false;
       setActiveConversation(null);
+      resetStage();
     };
   }, [
     route.params?.conversationId,
     loadConversation,
     createConversation,
+    setActiveConversation,
+    resetStage,
     settings.sourceLanguage,
     settings.targetLanguage,
-    setActiveConversation,
   ]);
 
   useEffect(() => {
@@ -120,6 +167,24 @@ export function ConversationScreen() {
       ]);
     }
   }, [recordingError, clearError]);
+
+  useEffect(() => {
+    if (!sourceOptions.some((item) => item.code === sourceLanguage)) {
+      const fallback = sourceOptions[0]?.code;
+      if (fallback) {
+        setSourceLanguage(fallback);
+      }
+    }
+  }, [sourceLanguage, sourceOptions]);
+
+  useEffect(() => {
+    if (!targetOptions.some((item) => item.code === targetLanguage)) {
+      const fallback = targetOptions[0]?.code;
+      if (fallback) {
+        setTargetLanguage(fallback);
+      }
+    }
+  }, [targetLanguage, targetOptions]);
 
   const scrollToEnd = useCallback(() => {
     if (messages.length > 0) {
@@ -148,67 +213,67 @@ export function ConversationScreen() {
 
       if (!isApiConfigured()) {
         Alert.alert(
-          'API Not Configured',
-          'Configure your API base URL in Settings before starting a voice session.',
+          'Backend Not Configured',
+          'Set the backend URL in Settings before starting a voice session.',
         );
         return;
       }
 
-      setIsProcessingPipeline(true);
+      if (!isSupportedPair(sourceLanguage, targetLanguage)) {
+        Alert.alert(
+          'Unsupported Language Pair',
+          `Translation from ${sourceLanguage.toUpperCase()} to ${targetLanguage.toUpperCase()} is not supported by the backend.`,
+        );
+        return;
+      }
+
+      setPipelineStage('uploading');
 
       try {
-        setPipelineMessage('Transcribing your voice…');
-        const transcription = await transcribeAudio({
+        startProcessingStages();
+
+        const result = await translateSpeech({
           audioUri,
-          language: sourceLanguage,
+          target_lang: targetLanguage,
+          source_lang: sourceLanguage,
         });
+
+        const detectedSource = isSupportedLanguage(result.detected_language)
+          ? result.detected_language
+          : sourceLanguage;
 
         await appendMessage(
           conversation.id,
           'user',
-          transcription.text,
+          result.source_text,
           audioUri,
-          sourceLanguage,
+          detectedSource,
           targetLanguage,
         );
-
-        setPipelineMessage('Translating…');
-        const translation = await translateText({
-          text: transcription.text,
-          sourceLanguage,
-          targetLanguage,
-        });
-
-        let responseAudioUri: string | null = null;
-
-        if (settings.autoPlayResponses) {
-          setPipelineMessage('Generating speech…');
-          const synthesis = await synthesizeSpeech({
-            text: translation.translatedText,
-            language: targetLanguage,
-          });
-          responseAudioUri = synthesis.audioUri;
-        }
 
         await appendMessage(
           conversation.id,
           'assistant',
-          translation.translatedText,
-          responseAudioUri,
-          sourceLanguage,
+          result.translated_text,
+          result.audio_url,
+          detectedSource,
           targetLanguage,
         );
 
-        if (responseAudioUri) {
-          await playAudio(responseAudioUri);
+        if (settings.autoPlayResponses && result.audio_url) {
+          setPipelineStage('synthesizing');
+          await playAudio(result.audio_url);
         }
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : 'Processing failed.';
-        Alert.alert('Conversation Error', message);
+          error instanceof ApiRequestError
+            ? error.message
+            : error instanceof Error
+              ? error.message
+              : 'Voice translation failed.';
+        Alert.alert('Translation Error', message);
       } finally {
-        setIsProcessingPipeline(false);
-        setPipelineMessage('');
+        resetStage();
       }
     },
     [
@@ -216,15 +281,19 @@ export function ConversationScreen() {
       sourceLanguage,
       targetLanguage,
       settings.autoPlayResponses,
+      setPipelineStage,
+      startProcessingStages,
+      resetStage,
     ],
   );
 
   const handlePressIn = useCallback(() => {
-    if (isProcessingPipeline || isRecordingProcessing) {
+    if (isBusy || isRecordingProcessing) {
       return;
     }
+    setPipelineStage('recording');
     void beginRecording();
-  }, [beginRecording, isProcessingPipeline, isRecordingProcessing]);
+  }, [beginRecording, isBusy, isRecordingProcessing, setPipelineStage]);
 
   const handlePressOut = useCallback(async () => {
     if (!isRecording) {
@@ -233,8 +302,14 @@ export function ConversationScreen() {
     const uri = await endRecording();
     if (uri) {
       await processRecording(uri);
+    } else {
+      resetStage();
     }
-  }, [isRecording, endRecording, processRecording]);
+  }, [isRecording, endRecording, processRecording, resetStage]);
+
+  const showOverlay = isBusy && stage !== 'recording';
+  const overlayMessage =
+    stage === 'recording' ? '' : pipelineMessage;
 
   return (
     <GradientBackground>
@@ -257,7 +332,7 @@ export function ConversationScreen() {
               {activeConversation?.title ?? 'Conversation'}
             </Typography>
             <Typography variant="caption" color="muted">
-              Hold to speak
+              {stage === 'recording' ? 'Recording…' : 'Hold to speak'}
             </Typography>
           </View>
           <View style={styles.topBarSpacer} />
@@ -278,8 +353,9 @@ export function ConversationScreen() {
             <GlassCard style={styles.emptyState}>
               <Typography variant="subtitle">Ready to translate</Typography>
               <Typography variant="body" color="secondary">
-                Press and hold the microphone button below to record your
-                message. Release to transcribe, translate, and hear the response.
+                Press and hold the microphone to record. On release, your audio
+                is uploaded to the backend for transcription, translation, and
+                speech synthesis.
               </Typography>
             </GlassCard>
           }
@@ -297,26 +373,38 @@ export function ConversationScreen() {
           <LanguageSelector
             label="From"
             selectedCode={sourceLanguage}
-            onSelect={setSourceLanguage}
+            onSelect={(code) => {
+              if (isSupportedLanguage(code)) {
+                setSourceLanguage(code);
+              }
+            }}
+            languages={sourceOptions}
+            disabled={isBusy}
           />
           <LanguageSelector
             label="To"
             selectedCode={targetLanguage}
-            onSelect={setTargetLanguage}
+            onSelect={(code) => {
+              if (isSupportedLanguage(code)) {
+                setTargetLanguage(code);
+              }
+            }}
+            languages={targetOptions}
+            disabled={isBusy}
           />
           <View style={styles.recordRow}>
             <RecordButton
               isRecording={isRecording}
-              isProcessing={isRecordingProcessing || isProcessingPipeline}
+              isProcessing={isRecordingProcessing || isBusy}
               onPressIn={handlePressIn}
               onPressOut={handlePressOut}
-              disabled={isProcessingPipeline}
+              disabled={isBusy && !isRecording}
             />
           </View>
         </View>
       </KeyboardAvoidingView>
 
-      <LoadingOverlay visible={isProcessingPipeline} message={pipelineMessage} />
+      <LoadingOverlay visible={showOverlay} message={overlayMessage} />
     </GradientBackground>
   );
 }

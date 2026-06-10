@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { BORDER_RADIUS, SPACING } from '../../constants/layout';
-import { SUPPORTED_LANGUAGES } from '../../constants/languages';
+import type { LanguageOption } from '../../constants/languages';
 import { useTheme } from '../../hooks/useTheme';
 import { Typography } from '../common/Typography';
 
@@ -9,12 +9,16 @@ interface LanguageSelectorProps {
   selectedCode: string;
   onSelect: (code: string) => void;
   label: string;
+  languages: LanguageOption[];
+  disabled?: boolean;
 }
 
 export function LanguageSelector({
   selectedCode,
   onSelect,
   label,
+  languages,
+  disabled = false,
 }: LanguageSelectorProps) {
   const { theme } = useTheme();
 
@@ -28,11 +32,12 @@ export function LanguageSelector({
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
       >
-        {SUPPORTED_LANGUAGES.map((language) => {
+        {languages.map((language) => {
           const isSelected = language.code === selectedCode;
           return (
             <Pressable
               key={language.code}
+              disabled={disabled}
               onPress={() => onSelect(language.code)}
               style={[
                 styles.chip,
@@ -43,6 +48,7 @@ export function LanguageSelector({
                   borderColor: isSelected
                     ? theme.colors.accent
                     : theme.colors.glassBorder,
+                  opacity: disabled ? 0.5 : 1,
                 },
               ]}
             >
