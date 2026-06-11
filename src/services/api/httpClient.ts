@@ -55,6 +55,7 @@ function isRetryableError(error: unknown): boolean {
 export function configureHttpClient(baseUrl: string, apiKey: string): void {
   const normalizedBaseUrl = (baseUrl.trim() || DEFAULT_API_BASE_URL).replace(/\/$/, '');
   currentBaseUrl = normalizedBaseUrl;
+  console.log('[HTTP] API URL =', normalizedBaseUrl);
 
   clientInstance = axios.create({
     baseURL: normalizedBaseUrl || undefined,

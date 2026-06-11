@@ -1,4 +1,11 @@
-import { Audio } from 'expo-av';
+import {
+  AudioModule,
+  createAudioPlayer,
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  type AudioRecorder,
+} from 'expo-audio';
 import { AUDIO_RECORDING_OPTIONS } from '../../constants/config';
 
 export type RecordingState = 'idle' | 'recording' | 'paused';
@@ -18,20 +25,22 @@ export class AudioRecordingError extends Error {
   }
 }
 
-let activeRecording: Audio.Recording | null = null;
+const RECORDING_OPTIONS = {
+  ...RecordingPresets.HIGH_QUALITY,
+  numberOfChannels: AUDIO_RECORDING_OPTIONS.numberOfChannels,
+};
+
+let activeRecording: AudioRecorder | null = null;
 
 export async function requestAudioPermissions(): Promise<boolean> {
-  const permission = await Audio.requestPermissionsAsync();
+  const permission = await requestRecordingPermissionsAsync();
   return permission.granted;
 }
 
 export async function configureAudioSession(): Promise<void> {
-  await Audio.setAudioModeAsync({
-    allowsRecordingIOS: true,
-    playsInSilentModeIOS: true,
-    staysActiveInBackground: false,
-    shouldDuckAndroid: true,
-    playThroughEarpieceAndroid: false,
+  await setAudioModeAsync({
+    allowsRecording: true,
+    playsInSilentMode: true,
   });
 }
 
@@ -47,12 +56,10 @@ export async function startRecording(): Promise<void> {
     await stopRecording();
   }
 
-  const recording = new Audio.Recording();
+  const recording = new AudioModule.AudioRecorder(RECORDING_OPTIONS);
   try {
-    await recording.prepareToRecordAsync(
-      Audio.RecordingOptionsPresets.HIGH_QUALITY,
-    );
-    await recording.startAsync();
+    await recording.prepareToRecordAsync();
+    recording.record();
     activeRecording = recording;
   } catch (error) {
     throw new AudioRecordingError('Failed to start recording.', error);
@@ -65,8 +72,8 @@ export async function stopRecording(): Promise<string> {
   }
 
   try {
-    await activeRecording.stopAndUnloadAsync();
-    const uri = activeRecording.getURI();
+    await activeRecording.stop();
+    const uri = activeRecording.uri;
     activeRecording = null;
 
     if (!uri) {
@@ -89,7 +96,7 @@ export async function cancelRecording(): Promise<void> {
   }
 
   try {
-    await activeRecording.stopAndUnloadAsync();
+    await activeRecording.stop();
   } finally {
     activeRecording = null;
   }
@@ -101,16 +108,27 @@ export function isRecordingActive(): boolean {
 
 export async function playAudio(uri: string): Promise<void> {
   await configureAudioSession();
-  const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true });
+  const player = createAudioPlayer({ uri });
+
   await new Promise<void>((resolve, reject) => {
-    sound.setOnPlaybackStatusUpdate((status) => {
+    const subscription = player.addListener('playbackStatusUpdate', (status) => {
       if (!status.isLoaded) {
         return;
       }
       if (status.didJustFinish) {
-        void sound.unloadAsync().then(() => resolve()).catch(reject);
+        subscription.remove();
+        player.remove();
+        resolve();
       }
     });
+
+    try {
+      player.play();
+    } catch (error) {
+      subscription.remove();
+      player.remove();
+      reject(error);
+    }
   });
 }
 

@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AnalyticsStats, HealthResponse } from '../types/api';
-import { fetchAnalyticsStats, fetchHealth } from '../services/api/talkBridgeApi';
+import {
+  fetchAnalyticsStats,
+  fetchHealth,
+  isBackendHealthy,
+} from '../services/api/talkBridgeApi';
 import { ApiRequestError, isApiConfigured } from '../services/api/httpClient';
 
 interface BackendStatusState {
@@ -45,7 +49,7 @@ export function useBackendStatus() {
         stats,
         isLoading: false,
         error: null,
-        isOnline: health.status === 'ok',
+        isOnline: isBackendHealthy(health.status),
       });
     } catch (error) {
       const message =

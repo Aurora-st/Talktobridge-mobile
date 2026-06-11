@@ -7,26 +7,22 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "scheme": "talkbridge",
-    "splash": {
-      "image": "./assets/icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0F172A"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.talkbridge.ai",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "TalkBridge AI needs microphone access to record your voice for translation.",
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.talkbridge.ai",
       "adaptiveIcon": {
-        "backgroundColor": "#0F172A",
         "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#0F172A"
       },
       "permissions": [
         "android.permission.RECORD_AUDIO",
@@ -39,11 +35,18 @@
     },
     "plugins": [
       [
-        "expo-av",
+        "expo-audio",
         {
-          "microphonePermission": "TalkBridge AI needs microphone access to record your voice for translation."
+          "microphonePermission": "TalkBridge AI needs microphone access to record your voice for translation.",
+          "recordAudioAndroid": true
         }
-      ]
-    ]
+      ],
+      "expo-asset"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "9dac37ea-b0f6-4d3c-9a03-5e76fd5b05b9"
+      }
+    }
   }
 }

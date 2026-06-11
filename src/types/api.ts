@@ -1,5 +1,3 @@
-export const BACKEND_BASE_URL = 'http://localhost:8000';
-
 export interface Latency {
   asr: number;
   translation: number;
@@ -33,11 +31,17 @@ export interface TranslateSpeechRequest {
   fieldName?: 'file' | 'audio';
 }
 
+export interface RootHealthResponse {
+  status: string;
+  version?: string;
+}
+
 export interface HealthResponse {
   status: string;
-  whisper_model: string;
-  cache_entries: number;
+  whisper_model?: string;
+  cache_entries?: number;
   database?: string;
+  version?: string;
 }
 
 export interface AnalyticsStats {

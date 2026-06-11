@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
 import {
   Alert,
-  Platform,
   StyleSheet,
   TextInput,
   View,
@@ -21,7 +21,7 @@ import { PrimaryButton } from '../components/common/PrimaryButton';
 import { ScreenContainer } from '../components/common/ScreenContainer';
 import { SettingRow } from '../components/common/SettingRow';
 import { Typography } from '../components/common/Typography';
-import { fetchHealth } from '../services/api/talkBridgeApi';
+import { testBackendConnection } from '../services/api/talkBridgeApi';
 import { ApiRequestError } from '../services/api/httpClient';
 import { useSettings } from '../hooks/useSettings';
 import { useTheme } from '../hooks/useTheme';
@@ -39,6 +39,10 @@ export function SettingsScreen() {
   const [apiBaseUrl, setApiBaseUrl] = useState(settings.apiBaseUrl);
   const [isTesting, setIsTesting] = useState(false);
 
+  useEffect(() => {
+    setApiBaseUrl(settings.apiBaseUrl);
+  }, [settings.apiBaseUrl]);
+
   const handleSaveApi = async () => {
     const trimmedUrl = apiBaseUrl.trim();
     await updateSettings({ apiBaseUrl: trimmedUrl });
@@ -47,14 +51,39 @@ export function SettingsScreen() {
 
   const handleTestConnection = async () => {
     setIsTesting(true);
+    const trimmedUrl = apiBaseUrl.trim() || DEFAULT_API_BASE_URL;
+
+    console.log('[TEST] Testing backend...');
+    console.log('[TEST] API URL =', trimmedUrl);
+
     try {
-      await updateSettings({ apiBaseUrl: apiBaseUrl.trim() });
-      const health = await fetchHealth();
-      Alert.alert(
-        'Connection Successful',
-        `Status: ${health.status}\nWhisper: ${health.whisper_model}\nDatabase: ${health.database ?? 'connected'}`,
-      );
+      await fetch(`${DEFAULT_API_BASE_URL}/`)
+        .then((res) => res.json())
+        .then((data) => console.log('[API] Direct fetch SUCCESS:', data))
+        .catch((err) => console.log('[API] Direct fetch FAILED:', err));
+
+      await updateSettings({ apiBaseUrl: trimmedUrl });
+      const health = await testBackendConnection();
+      const details = [
+        `Status: ${health.status}`,
+        health.version ? `Version: ${health.version}` : null,
+        health.whisper_model ? `Whisper: ${health.whisper_model}` : null,
+        health.database ? `Database: ${health.database}` : null,
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      Alert.alert('Connection Successful', details);
     } catch (error) {
+      if (axios.isAxiosError(error)) {
+        console.log('[API] Test connection error:', error.response ?? error.message);
+      } else {
+        console.log(
+          '[API] Test connection error:',
+          error instanceof Error ? error.message : error,
+        );
+      }
+
       const message =
         error instanceof ApiRequestError
           ? error.message
@@ -146,8 +175,7 @@ export function SettingsScreen() {
           Backend Configuration
         </Typography>
         <Typography variant="caption" color="secondary">
-          FastAPI backend URL. Use {DEFAULT_API_BASE_URL} for{' '}
-          {Platform.OS === 'android' ? 'Android emulator' : 'local development'}.
+          FastAPI backend URL on your LAN. Default: {DEFAULT_API_BASE_URL}
         </Typography>
         <TextInput
           value={apiBaseUrl}
